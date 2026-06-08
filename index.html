@@ -1,0 +1,454 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>iDock - Интерактивная доска</title>
+    <!-- Подключаем сокеты для совместного рисования -->
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f0f2f5;
+            overflow: hidden;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        /* Панель инструментов */
+        .toolbar {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: white;
+            padding: 10px 20px;
+            border-radius: 30px;
+            box-shadow: 0 4px 25px rgba(0,0,0,0.15);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            z-index: 10;
+            max-width: 95vw;
+            overflow-x: auto;
+        }
+        .tool-group {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            border-right: 1px solid #e0e0e0;
+            padding-right: 10px;
+        }
+        .tool-group:last-child {
+            border-right: none;
+            padding-right: 0;
+        }
+        button {
+            background: #f5f5f5;
+            border: 1px solid #ddd;
+            padding: 8px 12px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 13px;
+            transition: all 0.2s ease;
+            color: #333;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            white-space: nowrap;
+        }
+        button:hover {
+            background: #e0e0e0;
+        }
+        button.active {
+            background: #007bff;
+            color: white;
+            border-color: #0056b3;
+        }
+        label {
+            font-size: 12px;
+            font-weight: 600;
+            color: #666;
+        }
+        input[type="color"] {
+            border: none;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            cursor: pointer;
+            background: none;
+        }
+        input[type="range"] {
+            width: 70px;
+            cursor: pointer;
+        }
+        /* Холст */
+        #canvas-container {
+            width: 100%;
+            height: 100%;
+            position: relative;
+        }
+        canvas {
+            display: block;
+            background: white;
+            cursor: crosshair;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        canvas.grid-bg {
+            background-image: linear-gradient(to right, #eef0f4 1px, transparent 1px),
+                              linear-gradient(to bottom, #eef0f4 1px, transparent 1px);
+            background-size: 30px 30px;
+        }
+        .text-input-field {
+            position: absolute;
+            border: 1px dashed #007bff;
+            background: transparent;
+            font-family: inherit;
+            padding: 2px;
+            outline: none;
+            z-index: 5;
+            overflow: hidden;
+            white-space: pre;
+            resize: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="toolbar">
+        <div class="tool-group">
+            <button id="tool-pencil" class="active" onclick="setTool('pencil')">✏️ Кисть</button>
+            <button id="tool-text" onclick="setTool('text')">🔤 Текст</button>
+            <button id="tool-eraser" onclick="setTool('eraser')">🧽 Стерка</button>
+        </div>
+
+        <div class="tool-group">
+            <button id="tool-line" onclick="setTool('line')">➖ Линия</button>
+            <button id="tool-rect" onclick="setTool('rect')">⬜ Квадрат</button>
+            <button id="tool-circle" onclick="setTool('circle')">⭕ Круг</button>
+            <button id="tool-triangle" onclick="setTool('triangle')">🔺 Треугольник</button>
+            <button id="tool-cube" onclick="setTool('cube')">📦 Куб 3D</button>
+        </div>
+
+        <div class="tool-group">
+            <label for="colorPicker">Цвет:</label>
+            <input type="color" id="colorPicker" value="#000000" onchange="updateSettings()">
+            
+            <label for="lineWidth">Размер:</label>
+            <input type="range" id="lineWidth" min="1" max="20" value="3" oninput="updateSettings()">
+            <span id="widthVal">3px</span>
+        </div>
+
+        <div class="tool-group">
+            <button id="grid-toggle" onclick="toggleGrid()">🏁 Сетка</button>
+            <button onclick="undo()" style="background: #fff3cd;">↩️ Отмена</button>
+            <button onclick="saveImage()" style="background: #d4edda; color: #155724;">💾 Сохранить</button>
+            <button onclick="clearCanvas()" style="background: #f8d7da; color: #721c24;">🗑️ Очистить</button>
+        </div>
+    </div>
+
+    <div id="canvas-container">
+        <canvas id="paintCanvas"></canvas>
+    </div>
+    <script>
+        const socket = io(); // Подключение к нашему серверу совместного рисования
+        const canvas = document.getElementById('paintCanvas');
+        const ctx = canvas.getContext('2d');
+        const widthVal = document.getElementById('widthVal');
+        const container = document.getElementById('canvas-container');
+
+        let isDrawing = false;
+        let currentTool = 'pencil';
+        let startX, startY;
+        let snapshot;
+        let currentColor = '#000000';
+        let currentWidth = 3;
+        
+        let historyStack = [];
+        const MAX_HISTORY = 20;
+
+        // Настройка размеров экрана и подготовка холста
+        function initCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, canvas.width, canvas.height); // Белая подложка
+            saveHistoryState();
+        }
+
+        // Сохранение текущего кадра в историю
+        function saveHistoryState() {
+            if (historyStack.length >= MAX_HISTORY) historyStack.shift();
+            historyStack.push(ctx.getImageData(0, 0, canvas.width, canvas.height));
+        }
+
+        // Кнопка «Отмена» (Шаг назад)
+        function undo() {
+            if (historyStack.length > 1) {
+                historyStack.pop(); // Удаляем текущий кадр
+                const prevState = historyStack[historyStack.length - 1];
+                ctx.putImageData(prevState, 0, 0);
+            }
+        }
+
+        // Включение/выключение сетки
+        function toggleGrid() {
+            canvas.classList.toggle('grid-bg');
+            document.getElementById('grid-toggle').classList.toggle('active');
+        }
+
+        // Обновление цвета и толщины кисти
+        function updateSettings() {
+            currentColor = document.getElementById('colorPicker').value;
+            currentWidth = document.getElementById('lineWidth').value;
+            widthVal.innerText = currentWidth + 'px';
+        }
+
+        // Смена активного инструмента на панели
+        function setTool(tool) {
+            currentTool = tool;
+            document.querySelectorAll('.tool-group button').forEach(btn => {
+                if(btn.id.startsWith('tool-')) btn.classList.remove('active');
+            });
+            const activeBtn = document.getElementById(`tool-${tool}`);
+            if(activeBtn) activeBtn.classList.add('active');
+        }
+
+        // Инструмент «Текст» — создание поля ввода по клику
+        function createTextPrompt(e) {
+            const existingInput = document.querySelector('.text-input-field');
+            if (existingInput) return;
+
+            const input = document.createElement('textarea');
+            input.className = 'text-input-field';
+            input.style.left = `${e.clientX}px`;
+            input.style.top = `${e.clientY}px`;
+            input.style.font = `${parseInt(currentWidth) * 3 + 14}px 'Segoe UI'`;
+            input.style.color = currentColor;
+            
+            container.appendChild(input);
+            setTimeout(() => input.focus(), 50);
+
+            // Закрепление текста при потере фокуса
+            input.addEventListener('blur', () => {
+                const text = input.value.trim();
+                if (text) {
+                    ctx.fillStyle = currentColor;
+                    ctx.font = input.style.font;
+                    ctx.textBaseline = 'top';
+                    const lines = text.split('\n');
+                    let currentY = e.clientY;
+                    const lineHeight = parseInt(input.style.font) * 1.2;
+                    lines.forEach(line => {
+                        ctx.fillText(line, e.clientX, currentY);
+                        currentY += lineHeight;
+                    });
+                    saveHistoryState();
+                }
+                input.remove();
+            });
+
+            // Завершение ввода по Shift + Enter
+            input.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter' && event.shiftKey) input.blur();
+            });
+        }
+
+        // Функция быстрой вставки изображений из буфера (Ctrl + V)
+        window.addEventListener('paste', function(e) {
+            const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+            for (let index in items) {
+                const item = items[index];
+                if (item.kind === 'file') {
+                    const blob = item.getAsFile();
+                    const reader = new FileReader();
+                    reader.onload = function(event) {
+                        const img = new Image();
+                        img.onload = function() {
+                            const maxW = canvas.width * 0.6; const maxH = canvas.height * 0.6;
+                            let w = img.width; let h = img.height;
+                            if (w > maxW || h > maxH) {
+                                const ratio = Math.min(maxW / w, maxH / h);
+                                w *= ratio; h *= ratio;
+                            }
+                            ctx.drawImage(img, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h);
+                            saveHistoryState();
+                        };
+                        img.src = event.target.result;
+                    };
+                    reader.readAsDataURL(blob);
+                }
+            }
+        });
+        // Вспомогательная функция рисования 3D Куба
+        function draw3DCube(ctx, x1, y1, x2, y2) {
+            const w = x2 - x1;
+            const h = y2 - y1;
+            const depth = Math.min(Math.abs(w), Math.abs(h)) * 0.35 * (w < 0 ? -1 : 1);
+            const depthY = Math.min(Math.abs(w), Math.abs(h)) * 0.35 * (h < 0 ? -1 : 1);
+
+            ctx.strokeRect(x1 + depth, y1 - depthY, w, h);
+            ctx.strokeRect(x1, y1, w, h);
+
+            ctx.beginPath();
+            ctx.moveTo(x1, y1); ctx.lineTo(x1 + depth, y1 - depthY);
+            ctx.moveTo(x1 + w, y1); ctx.lineTo(x1 + w + depth, y1 - depthY);
+            ctx.moveTo(x1, y1 + h); ctx.lineTo(x1 + depth, y1 + h - depthY);
+            ctx.moveTo(x1 + w, y1 + h); ctx.lineTo(x1 + w + depth, y1 + h - depthY);
+            ctx.stroke();
+        }
+
+        // Логика нажатия (Старт рисования)
+        function startDraw(e) {
+            if (currentTool === 'text') {
+                createTextPrompt(e);
+                return;
+            }
+
+            isDrawing = true;
+            const clientX = e.clientX || e.touches?.[0]?.clientX;
+            const clientY = e.clientY || e.touches?.[0]?.clientY;
+            startX = clientX;
+            startY = clientY;
+
+            ctx.beginPath();
+            
+            if (currentTool === 'pencil') {
+                ctx.moveTo(startX, startY);
+                ctx.strokeStyle = currentColor;
+                ctx.lineWidth = currentWidth;
+            } else if (currentTool === 'eraser') {
+                ctx.moveTo(startX, startY);
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = currentWidth * 3;
+            }
+            
+            snapshot = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+            // Сообщаем серверу и другим пользователям, что мы начали новую линию
+            socket.emit('draw', { 
+                x: startX, 
+                y: startY, 
+                color: currentTool === 'eraser' ? '#ffffff' : currentColor, 
+                width: currentTool === 'eraser' ? currentWidth * 3 : currentWidth, 
+                isNewPath: true 
+            });
+        }
+
+        // Логика движения (Процесс прорисовки)
+        function drawing(e) {
+            if (!isDrawing) return;
+            e.preventDefault();
+
+            const clientX = e.clientX || e.touches?.[0]?.clientX;
+            const clientY = e.clientY || e.touches?.[0]?.clientY;
+
+            if (currentTool === 'pencil' || currentTool === 'eraser') {
+                ctx.lineTo(clientX, clientY);
+                ctx.stroke();
+
+                // Отправляем текущие координаты линии всем остальным на доске
+                socket.emit('draw', {
+                    x: clientX,
+                    y: clientY,
+                    color: currentTool === 'eraser' ? '#ffffff' : currentColor,
+                    width: currentTool === 'eraser' ? currentWidth * 3 : currentWidth,
+                    isNewPath: false
+                });
+            } else {
+                // Восстанавливаем сохраненный кадр, чтобы стирать шлейф при растягивании фигур
+                ctx.putImageData(snapshot, 0, 0);
+                ctx.strokeStyle = currentColor;
+                ctx.lineWidth = currentWidth;
+                ctx.beginPath();
+
+                if (currentTool === 'line') {
+                    ctx.moveTo(startX, startY); ctx.lineTo(clientX, clientY); ctx.stroke();
+                } else if (currentTool === 'rect') {
+                    ctx.strokeRect(startX, startY, clientX - startX, clientY - startY);
+                } else if (currentTool === 'circle') {
+                    let radius = Math.sqrt(Math.pow((startX - clientX), 2) + Math.pow((startY - clientY), 2));
+                    ctx.arc(startX, startY, radius, 0, 2 * Math.PI); ctx.stroke();
+                } else if (currentTool === 'triangle') {
+                    ctx.moveTo(startX + (clientX - startX) / 2, startY);
+                    ctx.lineTo(clientX, clientY); ctx.lineTo(startX, clientY); ctx.closePath(); ctx.stroke();
+                } else if (currentTool === 'cube') {
+                    draw3DCube(ctx, startX, startY, clientX, clientY);
+                }
+            }
+        }
+
+        // Завершение рисования
+        function stopDraw() {
+            if (isDrawing) {
+                isDrawing = false;
+                ctx.beginPath();
+                saveHistoryState();
+            }
+        }
+
+        // Прием чужих линий с сервера в реальном времени
+        socket.on('draw', (data) => {
+            ctx.lineWidth = data.width;
+            ctx.strokeStyle = data.color;
+            if (data.isNewPath) {
+                ctx.beginPath();
+                ctx.moveTo(data.x, data.y);
+            } else {
+                ctx.lineTo(data.x, data.y);
+                ctx.stroke();
+            }
+        });
+
+        // Функция скачивания готовой доски в файл PNG
+        function saveImage() {
+            const link = document.createElement('a');
+            link.download = `idock_board_${Date.now()}.png`;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        }
+
+        // Полная очистка холста
+        function clearCanvas() {
+            if(confirm('Очистить всю доску для всех?')) {
+                ctx.fillStyle = 'white';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                historyStack = [];
+                saveHistoryState();
+                socket.emit('clear'); // Отправляем команду очистки всем
+            }
+        }
+        
+        // Ловим чужую команду очистки доски
+        socket.on('clear', () => {
+            ctx.fillStyle = 'white'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+            historyStack = []; saveHistoryState();
+        });
+
+        // Слушатели для мыши
+        canvas.addEventListener('mousedown', startDraw);
+        canvas.addEventListener('mousemove', drawing);
+        canvas.addEventListener('mouseup', stopDraw);
+        canvas.addEventListener('mouseleave', stopDraw);
+
+        // Слушатели для Touch-экранов (смартфоны, планшеты)
+        canvas.addEventListener('touchstart', startDraw);
+        canvas.addEventListener('touchmove', drawing);
+        canvas.addEventListener('touchend', stopDraw);
+
+        // Старт инициализации
+        initCanvas();
+    </script>
+</body>
+</html>
