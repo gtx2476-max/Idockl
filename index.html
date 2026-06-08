@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>iDock - Интерактивная доска</title>
-    <!-- Подключаем сокеты для совместного рисования -->
     <script src="/socket.io/socket.io.js"></script>
     <style>
         * {
@@ -21,7 +20,6 @@
             display: flex;
             flex-direction: column;
         }
-        /* Панель инструментов */
         .toolbar {
             position: fixed;
             top: 20px;
@@ -89,7 +87,6 @@
             width: 70px;
             cursor: pointer;
         }
-        /* Холст */
         #canvas-container {
             width: 100%;
             height: 100%;
@@ -160,7 +157,7 @@
         <canvas id="paintCanvas"></canvas>
     </div>
     <script>
-        const socket = io(); // Подключение к нашему серверу совместного рисования
+        const socket = io(); 
         const canvas = document.getElementById('paintCanvas');
         const ctx = canvas.getContext('2d');
         const widthVal = document.getElementById('widthVal');
@@ -176,46 +173,40 @@
         let historyStack = [];
         const MAX_HISTORY = 20;
 
-        // Настройка размеров экрана и подготовка холста
         function initCanvas() {
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
             ctx.fillStyle = 'white';
-            ctx.fillRect(0, 0, canvas.width, canvas.height); // Белая подложка
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
             saveHistoryState();
         }
 
-        // Сохранение текущего кадра в историю
         function saveHistoryState() {
             if (historyStack.length >= MAX_HISTORY) historyStack.shift();
             historyStack.push(ctx.getImageData(0, 0, canvas.width, canvas.height));
         }
 
-        // Кнопка «Отмена» (Шаг назад)
         function undo() {
             if (historyStack.length > 1) {
-                historyStack.pop(); // Удаляем текущий кадр
+                historyStack.pop();
                 const prevState = historyStack[historyStack.length - 1];
                 ctx.putImageData(prevState, 0, 0);
             }
         }
 
-        // Включение/выключение сетки
         function toggleGrid() {
             canvas.classList.toggle('grid-bg');
             document.getElementById('grid-toggle').classList.toggle('active');
         }
 
-        // Обновление цвета и толщины кисти
         function updateSettings() {
             currentColor = document.getElementById('colorPicker').value;
             currentWidth = document.getElementById('lineWidth').value;
             widthVal.innerText = currentWidth + 'px';
         }
 
-        // Смена активного инструмента на панели
         function setTool(tool) {
             currentTool = tool;
             document.querySelectorAll('.tool-group button').forEach(btn => {
@@ -225,7 +216,23 @@
             if(activeBtn) activeBtn.classList.add('active');
         }
 
-        // Инструмент «Текст» — создание поля ввода по клику
+        function draw3DCube(ctx, x1, y1, x2, y2) {
+            const w = x2 - x1;
+            const h = y2 - y1;
+            const depth = Math.min(Math.abs(w), Math.abs(h)) * 0.35 * (w < 0 ? -1 : 1);
+            const depthY = Math.min(Math.abs(w), Math.abs(h)) * 0.35 * (h < 0 ? -1 : 1);
+
+            ctx.strokeRect(x1 + depth, y1 - depthY, w, h);
+            ctx.strokeRect(x1, y1, w, h);
+
+            ctx.beginPath();
+            ctx.moveTo(x1, y1); ctx.lineTo(x1 + depth, y1 - depthY);
+            ctx.moveTo(x1 + w, y1); ctx.lineTo(x1 + w + depth, y1 - depthY);
+            ctx.moveTo(x1, y1 + h); ctx.lineTo(x1 + depth, y1 + h - depthY);
+            ctx.moveTo(x1 + w, y1 + h); ctx.lineTo(x1 + w + depth, y1 + h - depthY);
+            ctx.stroke();
+        }
+
         function createTextPrompt(e) {
             const existingInput = document.querySelector('.text-input-field');
             if (existingInput) return;
@@ -240,7 +247,6 @@
             container.appendChild(input);
             setTimeout(() => input.focus(), 50);
 
-            // Закрепление текста при потере фокуса
             input.addEventListener('blur', () => {
                 const text = input.value.trim();
                 if (text) {
@@ -259,13 +265,11 @@
                 input.remove();
             });
 
-            // Завершение ввода по Shift + Enter
             input.addEventListener('keydown', (event) => {
                 if (event.key === 'Enter' && event.shiftKey) input.blur();
             });
         }
 
-        // Функция быстрой вставки изображений из буфера (Ctrl + V)
         window.addEventListener('paste', function(e) {
             const items = (e.clipboardData || e.originalEvent.clipboardData).items;
             for (let index in items) {
@@ -291,25 +295,6 @@
                 }
             }
         });
-        // Вспомогательная функция рисования 3D Куба
-        function draw3DCube(ctx, x1, y1, x2, y2) {
-            const w = x2 - x1;
-            const h = y2 - y1;
-            const depth = Math.min(Math.abs(w), Math.abs(h)) * 0.35 * (w < 0 ? -1 : 1);
-            const depthY = Math.min(Math.abs(w), Math.abs(h)) * 0.35 * (h < 0 ? -1 : 1);
-
-            ctx.strokeRect(x1 + depth, y1 - depthY, w, h);
-            ctx.strokeRect(x1, y1, w, h);
-
-            ctx.beginPath();
-            ctx.moveTo(x1, y1); ctx.lineTo(x1 + depth, y1 - depthY);
-            ctx.moveTo(x1 + w, y1); ctx.lineTo(x1 + w + depth, y1 - depthY);
-            ctx.moveTo(x1, y1 + h); ctx.lineTo(x1 + depth, y1 + h - depthY);
-            ctx.moveTo(x1 + w, y1 + h); ctx.lineTo(x1 + w + depth, y1 + h - depthY);
-            ctx.stroke();
-        }
-
-        // Логика нажатия (Старт рисования)
         function startDraw(e) {
             if (currentTool === 'text') {
                 createTextPrompt(e);
@@ -317,8 +302,9 @@
             }
 
             isDrawing = true;
-            const clientX = e.clientX || e.touches?.[0]?.clientX;
-            const clientY = e.clientY || e.touches?.[0]?.clientY;
+            
+            const clientX = e.clientX || (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+            const clientY = e.clientY || (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
             startX = clientX;
             startY = clientY;
 
@@ -336,7 +322,6 @@
             
             snapshot = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
-            // Сообщаем серверу и другим пользователям, что мы начали новую линию
             socket.emit('draw', { 
                 x: startX, 
                 y: startY, 
@@ -346,19 +331,17 @@
             });
         }
 
-        // Логика движения (Процесс прорисовки)
         function drawing(e) {
             if (!isDrawing) return;
             e.preventDefault();
 
-            const clientX = e.clientX || e.touches?.[0]?.clientX;
-            const clientY = e.clientY || e.touches?.[0]?.clientY;
+            const clientX = e.clientX || (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+            const clientY = e.clientY || (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
 
             if (currentTool === 'pencil' || currentTool === 'eraser') {
                 ctx.lineTo(clientX, clientY);
                 ctx.stroke();
 
-                // Отправляем текущие координаты линии всем остальным на доске
                 socket.emit('draw', {
                     x: clientX,
                     y: clientY,
@@ -367,7 +350,6 @@
                     isNewPath: false
                 });
             } else {
-                // Восстанавливаем сохраненный кадр, чтобы стирать шлейф при растягивании фигур
                 ctx.putImageData(snapshot, 0, 0);
                 ctx.strokeStyle = currentColor;
                 ctx.lineWidth = currentWidth;
@@ -389,7 +371,6 @@
             }
         }
 
-        // Завершение рисования
         function stopDraw() {
             if (isDrawing) {
                 isDrawing = false;
@@ -398,7 +379,6 @@
             }
         }
 
-        // Прием чужих линий с сервера в реальном времени
         socket.on('draw', (data) => {
             ctx.lineWidth = data.width;
             ctx.strokeStyle = data.color;
@@ -411,7 +391,6 @@
             }
         });
 
-        // Функция скачивания готовой доски в файл PNG
         function saveImage() {
             const link = document.createElement('a');
             link.download = `idock_board_${Date.now()}.png`;
@@ -419,35 +398,28 @@
             link.click();
         }
 
-        // Полная очистка холста
         function clearCanvas() {
             if(confirm('Очистить всю доску для всех?')) {
                 ctx.fillStyle = 'white';
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
                 historyStack = [];
                 saveHistoryState();
-                socket.emit('clear'); // Отправляем команду очистки всем
+                socket.emit('clear');
             }
         }
         
-        // Ловим чужую команду очистки доски
         socket.on('clear', () => {
             ctx.fillStyle = 'white'; ctx.fillRect(0, 0, canvas.width, canvas.height);
             historyStack = []; saveHistoryState();
         });
 
-        // Слушатели для мыши
         canvas.addEventListener('mousedown', startDraw);
         canvas.addEventListener('mousemove', drawing);
         canvas.addEventListener('mouseup', stopDraw);
         canvas.addEventListener('mouseleave', stopDraw);
-
-        // Слушатели для Touch-экранов (смартфоны, планшеты)
         canvas.addEventListener('touchstart', startDraw);
         canvas.addEventListener('touchmove', drawing);
         canvas.addEventListener('touchend', stopDraw);
-
-        // Старт инициализации
         initCanvas();
     </script>
 </body>
