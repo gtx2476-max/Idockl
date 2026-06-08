@@ -6,37 +6,74 @@ const path = require('path');
 
 const PORT = process.env.PORT || 3000;
 
-// Указываем серверу отдавать наш index.html
 app.use(express.static(__dirname));
 
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// Логика совместного рисования в реальном времени
+// Хранилище пользователей в комнатах
+const rooms = {};
+
 io.on('connection', (socket) => {
-    socket.on('draw', (data) => {
-        socket.broadcast.emit('draw', data);
+    // Пользователь заходит в комнату
+    socket.on('join-room', ({ room, name, color }) => {
+        socket.join(room);
+        socket.room = room;
+        
+        if (!rooms[room]) rooms[room] = {};
+        rooms[room][socket.id] = { name, color, x: 0, y: 0 };
+
+        // Сообщаем всем в комнате о новом участнике
+        io.to(room).emit('update-users', rooms[room]);
     });
+
+    // Передача движения мыши/курсора
+    socket.on('mouse-move', (data) => {
+        if (socket.room && rooms[socket.room] && rooms[socket.room][socket.id]) {
+            rooms[socket.room][socket.id].x = data.x;
+            rooms[socket.room][socket.id].y = data.y;
+            socket.broadcast.to(socket.room).emit('mouse-move', {
+                id: socket.id,
+                x: data.x,
+                y: data.y
+            });
+        }
+    });
+
+    // Передача линий рисования
+    socket.on('draw', (data) => {
+        if (socket.room) {
+            socket.broadcast.to(socket.room).emit('draw', data);
+        }
+    });
+
+    // Команда очистки доски
     socket.on('clear', () => {
-        socket.broadcast.emit('clear');
+        if (socket.room) {
+            socket.broadcast.to(socket.room).emit('clear');
+        }
+    });
+
+    // Отключение пользователя
+    socket.on('disconnect', () => {
+        if (socket.room && rooms[socket.room] && rooms[socket.room][socket.id]) {
+            delete rooms[socket.room][socket.id];
+            io.to(socket.room).emit('update-users', rooms[socket.room]);
+            if (Object.keys(rooms[socket.room]).length === 0) {
+                delete rooms[socket.room];
+            }
+        }
     });
 });
 
-// 🔥 ТА САМАЯ ХИТРОСТЬ (ЗАЩИТА ОТ ЗАСЫПАНИЯ СЕРВЕРА)
+// Само-пинг против засыпания
 const https = require('https');
 setInterval(() => {
-    // Хостинг Render сам подставит сюда адрес вашего сайта
     const url = process.env.RENDER_EXTERNAL_URL;
     if (url) {
-        https.get(url, (res) => {
-            console.log('Пользователь "виртуально" зашел на сайт. Сервер активен!');
-        }).on('error', (e) => {
-            console.error('Ошибка само-пинга:', e.message);
-        });
+        https.get(url, () => { console.log('Пинг выполнен'); }).on('error', (e) => {});
     }
-}, 600000); // Повторяем проверку каждые 10 минут
+}, 600000);
 
-http.listen(PORT, () => {
-    console.log(`Сервер запущен на порту ${PORT}`);
-});
+http.listen(PORT, () => { console.log(`Сервер на порту ${PORT}`); });
