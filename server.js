@@ -1,79 +1,692 @@
-const express = require('express');
-const app = express();
-const http = require('http').createServer(app);
-const io = require('socket.io')(http, { cors: { origin: "*" } });
-const path = require('path');
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>iDock Party 3D - Онлайн Пространство</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f8f9fa;
+            overflow: hidden;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .modal-overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: linear-gradient(135deg, #e0e5ec 0%, #b8c6db 100%);
+            z-index: 100;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .menu-card {
+            background: white;
+            padding: 40px;
+            border-radius: 24px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.1);
+            text-align: center;
+            max-width: 460px;
+            width: 90%;
+        }
+        .menu-card h1 {
+            font-size: 36px;
+            font-weight: 800;
+            color: #007bff;
+            margin-bottom: 8px;
+        }
+        .menu-card p {
+            font-size: 14px;
+            color: #6c757d;
+            margin-bottom: 20px;
+        }
+        .menu-card input[type="text"] {
+            width: 100%;
+            padding: 14px 24px;
+            margin-bottom: 20px;
+            border: 2px solid #e2e8f0;
+            border-radius: 50px;
+            font-size: 16px;
+            outline: none;
+            text-align: center;
+        }
+        .mode-select-box {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            background: #f1f3f5;
+            padding: 6px;
+            border-radius: 30px;
+        }
+        .mode-option {
+            flex: 1;
+            padding: 10px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 14px;
+            transition: all 0.2s;
+            color: #495057;
+        }
+        .mode-option.active {
+            background: white;
+            color: #007bff;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+        }
+        .menu-btn {
+            width: 100%;
+            padding: 14px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 50px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-bottom: 12px;
+            transition: all 0.2s;
+        }
+        .menu-btn:hover { background: #0056b3; }
+        .menu-btn.secondary { background: #28a745; }
+        .menu-btn.secondary:hover { background: #218838; }
 
-const PORT = process.env.PORT || 3000;
-
-app.use(express.static(__dirname));
-
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'index.html'));
-});
-
-// Хранилище пользователей в комнатах
-const rooms = {};
-
-io.on('connection', (socket) => {
-    // Пользователь заходит в комнату
-    socket.on('join-room', ({ room, name, color }) => {
-        socket.join(room);
-        socket.room = room;
+        .toolbar {
+            position: fixed;
+            top: 20px; left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            padding: 8px 16px;
+            border-radius: 50px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.08);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            z-index: 10;
+            max-width: 95vw;
+            overflow-x: auto;
+            display: none;
+        }
+        .tool-group {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            border-right: 1px solid #e2e8f0;
+            padding-right: 10px;
+        }
+        .tool-group:last-child { border-right: none; padding-right: 0; }
+        button {
+            background: transparent; border: none;
+            padding: 8px 14px; border-radius: 50px;
+            cursor: pointer; font-weight: 600; font-size: 13px;
+            transition: all 0.2s; color: #495057;
+            display: flex; align-items: center; gap: 4px;
+        }
+        button:hover { background: #f1f3f5; }
+        button.active { background: #007bff; color: white; }
         
-        if (!rooms[room]) rooms[room] = {};
-        rooms[room][socket.id] = { name, color, x: 0, y: 0 };
-
-        // Сообщаем всем в комнате о новом участнике
-        io.to(room).emit('update-users', rooms[room]);
-    });
-
-    // Передача движения мыши/курсора
-    socket.on('mouse-move', (data) => {
-        if (socket.room && rooms[socket.room] && rooms[socket.room][socket.id]) {
-            rooms[socket.room][socket.id].x = data.x;
-            rooms[socket.room][socket.id].y = data.y;
-            socket.broadcast.to(socket.room).emit('mouse-move', {
-                id: socket.id,
-                x: data.x,
-                y: data.y
-            });
+        #canvas-container { width: 100%; height: 100%; position: relative; }
+        canvas { display: block; background: white; position: absolute; top: 0; left: 0; }
+        canvas.grid-bg {
+            background-image: linear-gradient(to right, #edf2f7 1px, transparent 1px), linear-gradient(to bottom, #edf2f7 1px, transparent 1px);
+            background-size: 30px 30px;
         }
-    });
 
-    // Передача линий рисования
-    socket.on('draw', (data) => {
-        if (socket.room) {
-            socket.broadcast.to(socket.room).emit('draw', data);
+        .user-cursor { position: absolute; pointer-events: none; z-index: 99; display: none; flex-direction: column; }
+        .cursor-pencil { font-size: 24px; transform: translate(-4px, -20px); }
+        .cursor-label {
+            background: var(--user-color, #007bff); color: white;
+            padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15); margin-top: -4px; margin-left: 10px;
         }
-    });
+        .text-input-field { position: absolute; border: 1px dashed #007bff; background: transparent; font-family: inherit; padding: 2px; outline: none; z-index: 5; overflow: hidden; white-space: pre; resize: none; }
+    </style>
+</head>
+<body>
 
-    // Команда очистки доски
-    socket.on('clear', () => {
-        if (socket.room) {
-            socket.broadcast.to(socket.room).emit('clear');
+    <div class="modal-overlay" id="menuOverlay">
+        <div class="menu-card">
+            <h1>iDock Studio 🚀</h1>
+            <p>Выберите пространство для творчества</p>
+            <input type="text" id="usernameInput" placeholder="Ваш ник..." maxlength="15">
+            
+            <div class="mode-select-box">
+                <div class="mode-option active" id="mode2d" onclick="switchDimension('2d')">🎨 2D Доска</div>
+                <div class="mode-option" id="mode3d" onclick="switchDimension('3d')">📦 3D Пространство</div>
+            </div>
+
+            <button class="menu-btn" onclick="startSingleMode()">✏️ Одиночный режим</button>
+            <button class="menu-btn secondary" onclick="startPartyMode()">🎉 Создать Сессию (Party)</button>
+        </div>
+    </div>
+
+    <div class="toolbar" id="mainToolbar">
+        <div class="tool-group" id="dynamicTools"></div>
+
+        <div class="tool-group" id="paramGroup">
+            <label for="colorPicker">Цвет:</label>
+            <input type="color" id="colorPicker" value="#212529" onchange="updateSettings()">
+            <label for="lineWidth">Размер:</label>
+            <input type="range" id="lineWidth" min="1" max="20" value="3" oninput="updateSettings()">
+            <span id="widthVal" style="font-size: 12px; font-weight: 600;">3px</span>
+        </div>
+
+        <div class="tool-group">
+            <button id="grid-toggle" onclick="toggleGrid()">🏁 Сетка</button>
+            <button id="undo-btn" onclick="undo()" style="color: #fd7e14;">↩️ Отмена</button>
+            <button id="save-btn" onclick="saveImage()" style="color: #28a745;">💾 Сохранить</button>
+            <button onclick="clearCanvas()" style="color: #dc3545;">🗑️ Очистить</button>
+        </div>
+    </div>
+
+    <div id="canvas-container">
+        <canvas id="paintCanvas"></canvas>
+    </div>
+    <script>
+        const socket = io(); 
+        const canvas = document.getElementById('paintCanvas');
+        const ctx = canvas.getContext('2d');
+        const widthVal = document.getElementById('widthVal');
+        const container = document.getElementById('canvas-container');
+
+        let currentDimension = '2d'; 
+        let isDrawing = false;
+        let currentTool = 'pencil';
+        let startX, startY;
+        let snapshot;
+        let currentColor = '#212529';
+        let currentWidth = 3;
+        
+        let historyStack = [];
+        const MAX_HISTORY = 20;
+
+        let cameraAngleX = 0.5;
+        let cameraAngleY = 0.5;
+        let isRotatingCamera = false;
+        let lastMouseX = 0;
+        let lastMouseY = 0;
+        let meshes3D = []; 
+
+        let myRoom = null;
+        let myName = 'Гость';
+        let myColor = '#' + Math.floor(Math.random()*16777215).toString(16);
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const roomFromUrl = urlParams.get('room');
+
+        if (roomFromUrl) {
+            myRoom = roomFromUrl;
+            document.querySelector('.menu-btn').style.display = 'none';
+            const partyBtn = document.querySelector('.menu-btn.secondary');
+            partyBtn.innerText = '🎉 Войти в Party';
+            partyBtn.setAttribute('onclick', 'joinExistingParty()');
         }
-    });
 
-    // Отключение пользователя
-    socket.on('disconnect', () => {
-        if (socket.room && rooms[socket.room] && rooms[socket.room][socket.id]) {
-            delete rooms[socket.room][socket.id];
-            io.to(socket.room).emit('update-users', rooms[socket.room]);
-            if (Object.keys(rooms[socket.room]).length === 0) {
-                delete rooms[socket.room];
+        function switchDimension(dim) {
+            currentDimension = dim;
+            document.getElementById('mode2d').classList.toggle('active', dim === '2d');
+            document.getElementById('mode3d').classList.toggle('active', dim === '3d');
+        }
+
+        function startSingleMode() {
+            const input = document.getElementById('usernameInput').value.trim();
+            if(input) myName = input;
+            setupEnvironment();
+        }
+
+        function startPartyMode() {
+            const input = document.getElementById('usernameInput').value.trim();
+            if(!input) { alert('Пожалуйста, введите ваш ник перед созданием комнаты!'); return; }
+            myName = input;
+            myRoom = 'party3d-' + Math.floor(Math.random() * 1000000);
+            window.history.pushState({}, '', `?room=${myRoom}&dim=${currentDimension}`);
+            enterRoom();
+        }
+        function joinExistingParty() {
+            const input = document.getElementById('usernameInput').value.trim();
+            if(!input) { alert('Пожалуйста, введите ваш ник для входа!'); return; }
+            myName = input;
+            const dimFromUrl = urlParams.get('dim');
+            if (dimFromUrl) currentDimension = dimFromUrl;
+            enterRoom();
+        }
+
+        function enterRoom() {
+            setupEnvironment();
+            socket.emit('join-room', { room: myRoom, name: myName, color: myColor });
+            alert(`Party создана! Отправьте ссылку друзьям: \n\n${window.location.href}`);
+        }
+
+        function setupEnvironment() {
+            document.getElementById('menuOverlay').style.display = 'none';
+            document.getElementById('mainToolbar').style.display = 'flex';
+            const toolGroup = document.getElementById('dynamicTools');
+            if (currentDimension === '2d') {
+                toolGroup.innerHTML = `
+                    <button id="tool-pencil" class="active" onclick="setTool('pencil')">✏️ Кисть</button>
+                    <button id="tool-text" onclick="setTool('text')">🔤 Текст</button>
+                    <button id="tool-eraser" onclick="setTool('eraser')">🧽 Стерка</button>
+                    <div style="width:1px; height:20px; background:#e2e8f0; margin:0 4px;"></div>
+                    <button id="tool-line" onclick="setTool('line')">➖ Линия</button>
+                    <button id="tool-rect" onclick="setTool('rect')">⬜ Квадрат</button>
+                    <button id="tool-circle" onclick="setTool('circle')">⭕ Круг</button>
+                    <button id="tool-triangle" onclick="setTool('triangle')">🔺 Треугольник</button>
+                    <button id="tool-cube" onclick="setTool('cube')">📦 Куб 3D</button>
+                `;
+                currentTool = 'pencil';
+                initCanvas();
+            } else {
+                toolGroup.innerHTML = `
+                    <button id="tool-camera" class="active" onclick="setTool('camera')">🎥 Камера</button>
+                    <div style="width:1px; height:20px; background:#e2e8f0; margin:0 4px;"></div>
+                    <button onclick="add3DObject('cube')">📦 + Куб</button>
+                    <button onclick="add3DObject('pyramid')">🔺 + Пирамида</button>
+                    <button onclick="add3DObject('cylinder')">🔋 + Цилиндр</button>
+                `;
+                document.getElementById('paramGroup').style.display = 'flex';
+                document.getElementById('save-btn').innerText = '💾 Экспорт .OBJ';
+                currentTool = 'camera';
+                initCanvas3D();
             }
         }
-    });
-});
 
-// Само-пинг против засыпания
-const https = require('https');
-setInterval(() => {
-    const url = process.env.RENDER_EXTERNAL_URL;
-    if (url) {
-        https.get(url, () => { console.log('Пинг выполнен'); }).on('error', (e) => {});
-    }
-}, 600000);
+        const activeCursors = {};
 
-http.listen(PORT, () => { console.log(`Сервер на порту ${PORT}`); });
+        socket.on('update-users', (users) => {
+            Object.keys(activeCursors).forEach(id => {
+                if (!users[id]) {
+                    activeCursors[id].remove();
+                    delete activeCursors[id];
+                }
+            });
+            Object.keys(users).forEach(id => {
+                if (id === socket.id) return;
+                if (!activeCursors[id]) {
+                    const cursorDiv = document.createElement('div');
+                    cursorDiv.className = 'user-cursor';
+                    cursorDiv.innerHTML = `
+                        <div class="cursor-pencil">✏️</div>
+                        <div class="cursor-label">${users[id].name}</div>
+                    `;
+                    container.appendChild(cursorDiv);
+                    activeCursors[id] = cursorDiv;
+                }
+                activeCursors[id].querySelector('.cursor-label').style.backgroundColor = users[id].color;
+                activeCursors[id].style.setProperty('--user-color', users[id].color);
+            });
+        });
+        socket.on('mouse-move', (data) => {
+            if (activeCursors[data.id]) {
+                activeCursors[data.id].style.display = 'flex';
+                activeCursors[data.id].style.left = data.x + 'px';
+                activeCursors[data.id].style.top = data.y + 'px';
+            }
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            if (myRoom) {
+                socket.emit('mouse-move', { x: e.clientX, y: e.clientY });
+            }
+        });
+
+        window.addEventListener('touchmove', (e) => {
+            if (myRoom && e.touches.length > 0) {
+                socket.emit('mouse-move', { x: e.touches[0].clientX, y: e.touches[0].clientY });
+            }
+        });
+
+        function initCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            saveHistoryState();
+        }
+
+        function saveHistoryState() {
+            if (currentDimension === '2d') {
+                if (historyStack.length >= MAX_HISTORY) historyStack.shift();
+                historyStack.push(ctx.getImageData(0, 0, canvas.width, canvas.height));
+            }
+        }
+
+        function undo() {
+            if (currentDimension === '2d' && historyStack.length > 1) {
+                historyStack.pop();
+                ctx.putImageData(historyStack[historyStack.length - 1], 0, 0);
+            }
+        }
+
+        function toggleGrid() {
+            canvas.classList.toggle('grid-bg');
+            document.getElementById('grid-toggle').classList.toggle('active');
+        }
+
+        function updateSettings() {
+            currentColor = document.getElementById('colorPicker').value;
+            currentWidth = document.getElementById('lineWidth').value;
+            widthVal.innerText = currentWidth + 'px';
+            if (currentDimension === '3d') renderScene3D();
+        }
+
+        function setTool(tool) {
+            currentTool = tool;
+            document.querySelectorAll('.tool-group button').forEach(btn => {
+                if(btn.id && btn.id.startsWith('tool-')) btn.classList.remove('active');
+            });
+            const activeBtn = document.getElementById(`tool-${tool}`);
+            if(activeBtn) activeBtn.classList.add('active');
+        }
+        function initCanvas3D() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            renderScene3D();
+        }
+
+        function renderScene3D() {
+            ctx.fillStyle = '#f8f9fa';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            const cx = canvas.width / 2;
+            const cy = canvas.height / 2;
+            const scale = 150;
+
+            const cosX = Math.cos(cameraAngleX);
+            const sinX = Math.sin(cameraAngleX);
+            const cosY = Math.cos(cameraAngleY);
+            const sinY = Math.sin(cameraAngleY);
+
+            function project(x, y, z) {
+                let x1 = x * cosY - z * sinY;
+                let z1 = x * sinY + z * cosY;
+                let y2 = y * cosX - z1 * sinX;
+                return {
+                    x: cx + x1 * scale,
+                    y: cy - y2 * scale
+                };
+            }
+
+            ctx.strokeStyle = '#e2e8f0';
+            ctx.lineWidth = 1;
+            for (let i = -2; i <= 2; i += 0.5) {
+                let p1 = project(i, -1, -2);
+                let p2 = project(i, -1, 2);
+                ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
+
+                let p3 = project(-2, -1, i);
+                let p4 = project(2, -1, i);
+                ctx.beginPath(); ctx.moveTo(p3.x, p3.y); ctx.lineTo(p4.x, p4.y); ctx.stroke();
+            }
+
+            meshes3D.forEach(obj => {
+                ctx.strokeStyle = obj.color;
+                ctx.lineWidth = obj.width;
+                obj.edges.forEach(edge => {
+                    const v1 = obj.vertices[edge[0]];
+                    const v2 = obj.vertices[edge[1]];
+                    const p1 = project(v1.x, v1.y, v1.z);
+                    const p2 = project(v2.x, v2.y, v2.z);
+                    ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
+                });
+            });
+        }
+
+        function add3DObject(type) {
+            let obj = { type: type, color: currentColor, width: Math.max(1, currentWidth / 2), vertices: [], edges: [] };
+            
+            if (type === 'cube') {
+                obj.vertices = [
+                    {x:-0.5, y:-0.5, z:-0.5}, {x:0.5, y:-0.5, z:-0.5}, {x:0.5, y:0.5, z:-0.5}, {x:-0.5, y:0.5, z:-0.5},
+                    {x:-0.5, y:-0.5, z:0.5}, {x:0.5, y:-0.5, z:0.5}, {x:0.5, y:0.5, z:0.5}, {x:-0.5, y:0.5, z:0.5}
+                ];
+                obj.edges = [, [1,2], [2,3], [3,0],
+, [5,6], [6,7], [7,4],
+, [1,5], [2,6], [3,7]
+                ];
+            } else if (type === 'pyramid') {
+                obj.vertices = [
+                    {x:-0.5, y:-0.5, z:-0.5}, {x:0.5, y:-0.5, z:-0.5}, {x:0.5, y:-0.5, z:0.5}, {x:-0.5, y:-0.5, z:0.5}, {x:0, y:0.6, z:0}
+                ];
+                obj.edges = [, [1,2], [2,3], [3,0],
+, [1,4], [2,4], [3,4]
+                ];
+            } else if (type === 'cylinder') {
+                const segments = 12;
+                for (let i = 0; i < segments; i++) {
+                    let angle = (i / segments) * Math.PI * 2;
+                    let x = Math.cos(angle) * 0.4;
+                    let z = Math.sin(angle) * 0.4;
+                    obj.vertices.push({x: x, y: -0.5, z: z});
+                    obj.vertices.push({x: x, y: 0.5, z: z});
+                }
+                for (let i = 0; i < segments; i++) {
+                    let next = (i + 1) % segments;
+                    obj.edges.push([i*2, next*2]);
+                    obj.edges.push([i*2+1, next*2+1]);
+                    obj.edges.push([i*2, i*2+1]);
+                }
+            }
+
+            meshes3D.push(obj);
+            renderScene3D();
+
+            if (myRoom) {
+                socket.emit('draw', { type: 'add3D', obj: obj });
+            }
+        }
+        function startDraw(e) {
+            if (currentDimension === '3d') {
+                if (currentTool === 'camera') {
+                    isRotatingCamera = true;
+                    lastMouseX = e.clientX || (e.touches && e.touches ? e.touches[0].clientX : 0);
+                    lastMouseY = e.clientY || (e.touches && e.touches ? e.touches[0].clientY : 0);
+                }
+                return;
+            }
+
+            if (currentTool === 'text') { createTextPrompt(e); return; }
+            isDrawing = true;
+            const clientX = e.clientX || (e.touches && e.touches ? e.touches[0].clientX : 0);
+            const clientY = e.clientY || (e.touches && e.touches ? e.touches[0].clientY : 0);
+            startX = clientX; startY = clientY;
+
+            ctx.beginPath();
+            if (currentTool === 'pencil') {
+                ctx.moveTo(startX, startY); ctx.strokeStyle = currentColor; ctx.lineWidth = currentWidth;
+            } else if (currentTool === 'eraser') {
+                ctx.moveTo(startX, startY); ctx.strokeStyle = '#ffffff'; ctx.lineWidth = currentWidth * 3;
+            }
+            snapshot = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+            if (myRoom) {
+                socket.emit('draw', { 
+                    x: startX, y: startY, color: currentTool === 'eraser' ? '#ffffff' : currentColor, 
+                    width: currentTool === 'eraser' ? currentWidth * 3 : currentWidth, isNewPath: true 
+                });
+            }
+        }
+
+        function drawing(e) {
+            const clientX = e.clientX || (e.touches && e.touches ? e.touches[0].clientX : 0);
+            const clientY = e.clientY || (e.touches && e.touches ? e.touches[0].clientY : 0);
+
+            if (currentDimension === '3d') {
+                if (isRotatingCamera) {
+                    let deltaX = clientX - lastMouseX;
+                    let deltaY = clientY - lastMouseY;
+                    cameraAngleY += deltaX * 0.01;
+                    cameraAngleX += deltaY * 0.01;
+                    lastMouseX = clientX;
+                    lastMouseY = clientY;
+                    renderScene3D();
+                }
+                return;
+            }
+
+            if (!isDrawing) return;
+            e.preventDefault();
+
+            if (currentTool === 'pencil' || currentTool === 'eraser') {
+                ctx.lineTo(clientX, clientY); ctx.stroke();
+                if (myRoom) {
+                    socket.emit('draw', { x: clientX, y: clientY, color: currentTool === 'eraser' ? '#ffffff' : currentColor, width: currentTool === 'eraser' ? currentWidth * 3 : currentWidth, isNewPath: false });
+                }
+            } else {
+                ctx.putImageData(snapshot, 0, 0);
+                ctx.strokeStyle = currentColor; ctx.lineWidth = currentWidth; ctx.beginPath();
+                if (currentTool === 'line') {
+                    ctx.moveTo(startX, startY); ctx.lineTo(clientX, clientY); ctx.stroke();
+                } else if (currentTool === 'rect') {
+                    ctx.strokeRect(startX, startY, clientX - startX, clientY - startY);
+                } else if (currentTool === 'circle') {
+                    let radius = Math.sqrt(Math.pow((startX - clientX), 2) + Math.pow((startY - clientY), 2));
+                    ctx.arc(startX, startY, radius, 0, 2 * Math.PI); ctx.stroke();
+                } else if (currentTool === 'triangle') {
+                    ctx.moveTo(startX + (clientX - startX) / 2, startY); ctx.lineTo(clientX, clientY); ctx.lineTo(startX, clientY); ctx.closePath(); ctx.stroke();
+                } else if (currentTool === 'cube') {
+                    const w = clientX - startX; const h = clientY - startY; const d = Math.min(Math.abs(w), Math.abs(h)) * 0.35;
+                    ctx.strokeRect(startX + d, startY - d, w, h); ctx.strokeRect(startX, startY, w, h);
+                    ctx.beginPath(); ctx.moveTo(startX, startY); ctx.lineTo(startX + d, startY - d); ctx.moveTo(startX + w, startY); ctx.lineTo(startX + w + d, startY - d); ctx.moveTo(startX, startY + h); ctx.lineTo(startX + d, startY + h - d); ctx.moveTo(startX + w, startY + h); ctx.lineTo(startX + w + d, startY + h - d); ctx.stroke();
+                }
+            }
+        }
+
+        function stopDraw() {
+            isDrawing = false;
+            isRotatingCamera = false;
+            ctx.beginPath();
+            saveHistoryState();
+        }
+        socket.on('draw', (data) => {
+            if (currentDimension === '3d' && data.type === 'add3D') {
+                meshes3D.push(data.obj);
+                renderScene3D();
+                return;
+            }
+            if (currentDimension === '2d') {
+                ctx.lineWidth = data.width; ctx.strokeStyle = data.color;
+                if (data.isNewPath) {
+                    ctx.beginPath(); ctx.moveTo(data.x, data.y);
+                } else {
+                    ctx.lineTo(data.x, data.y); ctx.stroke();
+                }
+            }
+        });
+
+        function saveImage() {
+            if (currentDimension === '3d') {
+                let objContent = "# iDock Studio 3D Export\n";
+                let vOffset = 1;
+                meshes3D.forEach((mesh, index) => {
+                    objContent += `g mesh_${index}_${mesh.type}\n`;
+                    mesh.vertices.forEach(v => {
+                        objContent += `v ${v.x.toFixed(4)} ${v.y.toFixed(4)} ${v.z.toFixed(4)}\n`;
+                    });
+                    mesh.edges.forEach(edge => {
+                        objContent += `l ${edge[0] + vOffset} ${edge[1] + vOffset}\n`;
+                    });
+                    vOffset += mesh.vertices.length;
+                });
+                const blob = new Blob([objContent], { type: 'text/plain' });
+                const link = document.createElement('a');
+                link.download = `idock_model_${Date.now()}.obj`;
+                link.href = URL.createObjectURL(blob);
+                link.click();
+            } else {
+                const link = document.createElement('a');
+                link.download = `idock_board_${Date.now()}.png`;
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+            }
+        }
+
+        function clearCanvas() {
+            if(confirm('Очистить всё?')) {
+                if (currentDimension === '3d') {
+                    meshes3D = []; renderScene3D();
+                } else {
+                    ctx.fillStyle = 'white'; ctx.fillRect(0, 0, canvas.width, canvas.height); historyStack = []; saveHistoryState();
+                }
+                if (myRoom) socket.emit('clear');
+            }
+        }
+        
+        socket.on('clear', () => {
+            if (currentDimension === '3d') { meshes3D = []; renderScene3D(); } 
+            else { ctx.fillStyle = 'white'; ctx.fillRect(0, 0, canvas.width, canvas.height); historyStack = []; saveHistoryState(); }
+        });
+
+        function createTextPrompt(e) {
+            const existingInput = document.querySelector('.text-input-field');
+            if (existingInput) return;
+            const input = document.createElement('textarea');
+            input.className = 'text-input-field';
+            input.style.left = `${e.clientX}px`; input.style.top = `${e.clientY}px`;
+            input.style.font = `${parseInt(currentWidth) * 3 + 14}px 'Segoe UI'`; input.style.color = currentColor;
+            container.appendChild(input);
+            setTimeout(() => input.focus(), 50);
+
+            input.addEventListener('blur', () => {
+                const text = input.value.trim();
+                if (text) {
+                    ctx.fillStyle = currentColor; ctx.font = input.style.font; ctx.textBaseline = 'top';
+                    const lines = text.split('\n');
+                    let currentY = e.clientY;
+                    const lineHeight = parseInt(input.style.font) * 1.2;
+                    lines.forEach(line => { ctx.fillText(line, e.clientX, currentY); currentY += lineHeight; });
+                    saveHistoryState();
+                }
+                input.remove();
+            });
+            input.addEventListener('keydown', (event) => { if (event.key === 'Enter' && event.shiftKey) input.blur(); });
+        }
+
+        window.addEventListener('paste', function(e) {
+            if (currentDimension === '3d') return;
+            const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+            for (let index in items) {
+                const item = items[index];
+                if (item.kind === 'file') {
+                    const blob = item.getAsFile();
+                    const reader = new FileReader();
+                    reader.onload = function(event) {
+                        const img = new Image();
+                        img.onload = function() {
+                            const maxW = canvas.width * 0.6; const maxH = canvas.height * 0.6;
+                            let w = img.width; let h = img.height;
+                            if (w > maxW || h > maxH) { const ratio = Math.min(maxW / w, maxH / h); w *= ratio; h *= ratio; }
+                            ctx.drawImage(img, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h);
+                            saveHistoryState();
+                        };
+                        img.src = event.target.result;
+                    };
+                    reader.readAsDataURL(blob);
+                }
+            }
+        });
+
+        canvas.addEventListener('mousedown', startDraw);
+        canvas.addEventListener('mousemove', drawing);
+        canvas.addEventListener('mouseup', stopDraw);
+        canvas.addEventListener('mouseleave', stopDraw);
+        canvas.addEventListener('touchstart', startDraw);
+        canvas.addEventListener('touchmove', drawing);
+        canvas.addEventListener('touchend', stopDraw);
+        window.addEventListener('resize', () => { 
+            canvas.width = window.innerWidth; canvas.height = window.innerHeight; 
+            if(currentDimension === '3d') renderScene3D(); else initCanvas(); 
+        });
+    </script>
+</body>
+</html>
