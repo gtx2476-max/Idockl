@@ -3,402 +3,285 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>iDock Studio Pro - Графический Редактор</title>
+    <title>iDock Party - Онлайн Доска</title>
     <script src="/socket.io/socket.io.js"></script>
     <style>
-        /* Стили CSS будут находиться в Части 2 */
-    </style>
-</head>
-<body>
-
-    <!-- Экран авторизации и выбора режима -->
-    <div class="modal-overlay" id="menuOverlay">
-        <div class="menu-card">
-            <h1>iDock Studio Pro 🎨</h1>
-            <p>Профессиональный редактор для совместного рисования</p>
-            <input type="text" id="usernameInput" placeholder="Ваш творческий ник..." maxlength="15">
-            <div style="display: flex; gap: 10px; margin-top: 15px;">
-                <button class="menu-btn" onclick="startSingleMode()">✏️ Одиночный Арт</button>
-                <button class="menu-btn secondary" onclick="startPartyMode()">🎉 Создать Сессию</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Основной контейнер студии -->
-    <div class="studio-container" id="studioUi">
-        
-        <!-- Верхняя панель управления -->
-        <header class="top-bar">
-            <div class="logo">iDock Studio Pro</div>
-            <div class="action-group">
-                <button onclick="undo()" title="Отмена (Ctrl+Z)">↩️ Назад</button>
-                <button onclick="toggleGrid()">🏁 Сетка</button>
-                <button onclick="clearCanvas()" class="danger-btn">🗑️ Очистить</button>
-                <button onclick="saveImage()" class="success-btn">💾 Экспорт PNG</button>
-            </div>
-        </header>
-
-        <div class="main-workspace">
-            <!-- Левая плавающая панель инструментов -->
-            <nav class="tool-panel">
-                <div class="panel-title">Инструменты</div>
-                <button id="tool-brush" class="active" onclick="setTool('brush')">🖌️ Кисть/Форма</button>
-                <button id="tool-text" onclick="setTool('text')">🔤 Текст</button>
-                <button id="tool-eraser" onclick="setTool('eraser')">🧽 Ластик</button>
-                <div class="separator"></div>
-                <button id="tool-line" onclick="setTool('line')">➖ Линия</button>
-                <button id="tool-rect" onclick="setTool('rect')">⬜ Квадрат</button>
-                <button id="tool-circle" onclick="setTool('circle')">⭕ Круг</button>
-                <button id="tool-triangle" onclick="setTool('triangle')">🔺 Треугольник</button>
-                <button id="tool-cube" onclick="setTool('cube')">📦 3D Куб</button>
-            </nav>
-
-            <!-- Центральная рабочая зона холста -->
-            <main id="canvas-container">
-                <canvas id="paintCanvas"></canvas>
-            </main>
-
-            <!-- Правая панель параметров (в стиле GIMP/Photoshop) -->
-            <aside class="properties-panel">
-                
-                <!-- Новая секция выбора типов кистей из GIMP -->
-                <div class="panel-section">
-                    <div class="panel-title">Тип Кисти / Мазка</div>
-                    <select id="brushType" onchange="updateSettings()">
-                        <option value="classic">Обычное перо (Classic)</option>
-                        <option value="airbrush">Аэрограф (Airbrush)</option>
-                        <option value="charcoal">Уголь / Текстура (Charcoal)</option>
-                        <option value="oil">Масляный мазок (Oil Brush)</option>
-                        <option value="pixel">Pixel-Art Маркер (100% Sharp)</option>
-                    </select>
-                </div>
-
-                <div class="panel-section">
-                    <div class="panel-title">Параметры Мазка</div>
-                    
-                    <div class="control-group">
-                        <label>Цвет (Палитра)</label>
-                        <input type="color" id="colorPicker" value="#007bff" onchange="updateSettings()">
-                    </div>
-
-                    <div class="control-group">
-                        <label>Размер: <span id="widthVal">5px</span></label>
-                        <input type="range" id="lineWidth" min="1" max="100" value="5" oninput="updateSettings()">
-                    </div>
-
-                    <div class="control-group">
-                        <label>Непрозрачность: <span id="opacityVal">100%</span></label>
-                        <input type="range" id="lineOpacity" min="1" max="100" value="100" oninput="updateSettings()">
-                    </div>
-
-                    <div class="control-group">
-                        <label>Жесткость краев: <span id="hardnessVal">100%</span></label>
-                        <input type="range" id="brushHardness" min="10" max="100" value="100" oninput="updateSettings()">
-                    </div>
-
-                    <div class="control-group">
-                        <label>Режим смешивания (GIMP)</label>
-                        <select id="blendMode" onchange="updateSettings()">
-                            <option value="source-over">Обычный (Normal)</option>
-                            <option value="multiply">Умножение (Multiply)</option>
-                            <option value="screen">Экран (Screen)</option>
-                            <option value="overlay">Перекрытие (Overlay)</option>
-                            <option value="difference">Разница (Difference)</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="panel-section active-users-section">
-                    <div class="panel-title">В сессии онлайн</div>
-                    <div id="usersList" class="users-list-box"></div>
-                </div>
-            </aside>
-        </div>
-    </div>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+        }
         body {
-            background-color: #1e1e1e;
-            color: #e0e0e0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f8f9fa;
             overflow: hidden;
             height: 100vh;
             display: flex;
             flex-direction: column;
         }
-        /* Окна авторизации */
         .modal-overlay {
             position: fixed;
             top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(20, 20, 20, 0.95);
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
             z-index: 100;
             display: flex;
             justify-content: center;
             align-items: center;
         }
         .menu-card {
-            background: #2d2d2d;
+            background: white;
             padding: 40px;
-            border-radius: 16px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            border-radius: 24px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.1);
             text-align: center;
-            max-width: 450px;
+            max-width: 420px;
             width: 90%;
-            border: 1px solid #3d3d3d;
         }
         .menu-card h1 {
-            font-size: 28px;
+            font-size: 36px;
+            font-weight: 800;
             color: #007bff;
-            margin-bottom: 10px;
+            margin-bottom: 8px;
+            letter-spacing: -1px;
         }
         .menu-card p {
-            color: #aaa;
             font-size: 14px;
-            margin-bottom: 20px;
+            color: #6c757d;
+            margin-bottom: 24px;
         }
         .menu-card input[type="text"] {
             width: 100%;
-            padding: 12px 20px;
+            padding: 14px 24px;
             margin-bottom: 20px;
-            background: #1e1e1e;
-            border: 1px solid #444;
-            border-radius: 8px;
-            color: #fff;
+            border: 2px solid #e2e8f0;
+            border-radius: 50px;
             font-size: 16px;
-            text-align: center;
+            font-weight: 500;
             outline: none;
+            text-align: center;
+            transition: border-color 0.2s;
         }
-        .menu-card input[type="text"]:focus { border-color: #007bff; }
+        .menu-card input[type="text"]:focus {
+            border-color: #007bff;
+        }
         .menu-btn {
-            flex: 1;
-            padding: 12px;
+            width: 100%;
+            padding: 14px;
             background: #007bff;
             color: white;
             border: none;
-            border-radius: 8px;
-            font-size: 14px;
+            border-radius: 50px;
+            font-size: 16px;
             font-weight: 600;
             cursor: pointer;
-            transition: background 0.2s;
+            margin-bottom: 12px;
+            transition: all 0.2s;
+            box-shadow: 0 4px 12px rgba(0,123,255,0.2);
         }
-        .menu-btn:hover { background: #0056b3; }
-        .menu-btn.secondary { background: #28a745; }
-        .menu-btn.secondary:hover { background: #1e7e34; }
+        .menu-btn:hover { background: #0056b3; transform: translateY(-1px); }
+        .menu-btn.secondary {
+            background: #28a745;
+            box-shadow: 0 4px 12px rgba(40,167,69,0.2);
+        }
+        .menu-btn.secondary:hover { background: #218838; transform: translateY(-1px); }
 
-        /* Рабочее пространство Студии */
-        .studio-container {
+        .toolbar {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            padding: 8px 16px;
+            border-radius: 50px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.08);
+            border: 1px solid rgba(255,255,255,0.5);
             display: flex;
-            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+            z-index: 10;
+            max-width: 95vw;
+            overflow-x: auto;
+            display: none;
+        }
+        .tool-group {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            border-right: 1px solid #e2e8f0;
+            padding-right: 10px;
+        }
+        .tool-group:last-child {
+            border-right: none;
+            padding-right: 0;
+        }
+        button {
+            background: transparent;
+            border: none;
+            padding: 8px 14px;
+            border-radius: 50px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 13px;
+            transition: all 0.2s;
+            color: #495057;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            white-space: nowrap;
+        }
+        button:hover {
+            background: #f1f3f5;
+            color: #212529;
+        }
+        button.active {
+            background: #007bff;
+            color: white;
+        }
+        label {
+            font-size: 12px;
+            font-weight: 700;
+            color: #6c757d;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        input[type="color"] {
+            border: none;
+            width: 26px;
+            height: 26px;
+            border-radius: 50%;
+            cursor: pointer;
+            background: none;
+        }
+        input[type="range"] {
+            width: 70px;
+            accent-color: #007bff;
+            cursor: pointer;
+        }
+        #canvas-container {
             width: 100%;
             height: 100%;
-        }
-        .top-bar {
-            height: 48px;
-            background: #2d2d2d;
-            border-bottom: 1px solid #3d3d3d;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 0 20px;
-            z-index: 5;
-        }
-        .logo { font-weight: 700; color: #007bff; font-size: 16px; }
-        .action-group { display: flex; gap: 8px; }
-        .action-group button, .tool-panel button {
-            background: #3a3a3a;
-            border: 1px solid #4a4a4a;
-            color: #e0e0e0;
-            padding: 6px 12px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 13px;
-            font-weight: 500;
-        }
-        .action-group button:hover, .tool-panel button:hover { background: #4a4a4a; }
-        .action-group button.danger-btn { background: #c82333; border-color: #bd2130; }
-        .action-group button.success-btn { background: #218838; border-color: #1e7e34; }
-        
-        .main-workspace {
-            display: flex;
-            flex: 1;
             position: relative;
-            height: calc(100vh - 48px);
-        }
-        
-        /* Левая панель */
-        .tool-panel {
-            width: 160px;
-            background: #2d2d2d;
-            border-right: 1px solid #3d3d3d;
-            padding: 15px 10px;
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-        }
-        .panel-title {
-            font-size: 11px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            color: #888;
-            margin-bottom: 8px;
-            font-weight: 700;
-        }
-        .tool-panel button {
-            width: 100%;
-            text-align: left;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 8px 10px;
-        }
-        .tool-panel button.active {
-            background: #007bff;
-            border-color: #0056b3;
-            color: #fff;
-        }
-        .separator {
-            height: 1px;
-            background: #3d3d3d;
-            margin: 10px 0;
-        }
-
-        /* Холст */
-        #canvas-container {
-            flex: 1;
-            position: relative;
-            background: #121212;
-            overflow: auto;
         }
         canvas {
-            background: #ffffff;
-            box-shadow: 0 0 20px rgba(0,0,0,0.8);
+            display: block;
+            background: white;
+            cursor: crosshair;
             position: absolute;
             top: 0; left: 0;
         }
         canvas.grid-bg {
-            background-image: linear-gradient(to right, rgba(0,0,0,0.08) 1px, transparent 1px),
-                              linear-gradient(to bottom, rgba(0,0,0,0.08) 1px, transparent 1px);
-            background-size: 32px 32px;
+            background-image: linear-gradient(to right, #edf2f7 1px, transparent 1px),
+                              linear-gradient(to bottom, #edf2f7 1px, transparent 1px);
+            background-size: 30px 30px;
         }
 
-        /* Правая панель параметров */
-        .properties-panel {
-            width: 240px;
-            background: #2d2d2d;
-            border-left: 1px solid #3d3d3d;
-            padding: 15px;
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
-            overflow-y: auto;
-        }
-        .panel-section {
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-        }
-        .control-group {
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-        }
-        .control-group label {
-            font-size: 12px;
-            color: #aaa;
-        }
-        .properties-panel input[type="range"] {
-            width: 100%;
-            accent-color: #007bff;
-            cursor: pointer;
-        }
-        .properties-panel select {
-            background: #1e1e1e;
-            border: 1px solid #444;
-            color: #fff;
-            padding: 6px;
-            border-radius: 4px;
-            outline: none;
-            font-size: 13px;
-        }
-        .properties-panel input[type="color"] {
-            width: 100%;
-            height: 34px;
-            background: none;
-            border: 1px solid #444;
-            border-radius: 4px;
-            cursor: pointer;
-        }
-
-        /* Списки пользователей и курсоры */
-        .users-list-box {
-            background: #1e1e1e;
-            border: 1px solid #3d3d3d;
-            border-radius: 6px;
-            padding: 10px;
-            min-height: 100px;
-            max-height: 200px;
-            overflow-y: auto;
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-            font-size: 13px;
-        }
-        .user-item {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        .user-color-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-        }
         .user-cursor {
             position: absolute;
             pointer-events: none;
             z-index: 99;
-            display: none; /* Скрыты до первых координат, чтобы не залипать в углу */
+            display: none;
             flex-direction: column;
         }
-        .cursor-pencil { font-size: 24px; transform: translate(-4px, -20px); }
+        .cursor-pencil {
+            font-size: 24px;
+            transform: translate(-4px, -20px);
+        }
         .cursor-label {
             background: var(--user-color, #007bff);
             color: white;
-            padding: 2px 6px;
-            border-radius: 4px;
+            padding: 3px 10px;
+            border-radius: 20px;
             font-size: 11px;
-            font-weight: 600;
+            font-weight: 700;
+            white-space: nowrap;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
             margin-top: -4px;
             margin-left: 10px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
         }
+        .text-input-field {
+            position: absolute;
+            border: 1px dashed #007bff;
+            background: transparent;
+            font-family: inherit;
+            padding: 2px;
+            outline: none;
+            z-index: 5;
+            overflow: hidden;
+            white-space: pre;
+            resize: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="modal-overlay" id="menuOverlay">
+        <div class="menu-card">
+            <h1>iDock Party 🚀</h1>
+            <p>Рисуй вместе с друзьями в реальном времени</p>
+            <input type="text" id="usernameInput" placeholder="Введите ваш ник..." maxlength="15">
+            <button class="menu-btn" onclick="startSingleMode()">✏️ Просто порисовать</button>
+            <button class="menu-btn secondary" onclick="startPartyMode()">🎉 Создать Party (Комнату)</button>
+        </div>
+    </div>
+
+    <div class="toolbar" id="mainToolbar">
+        <div class="tool-group">
+            <button id="tool-pencil" class="active" onclick="setTool('pencil')">✏️ Кисть</button>
+            <button id="tool-text" onclick="setTool('text')">🔤 Текст</button>
+            <button id="tool-eraser" onclick="setTool('eraser')">🧽 Стерка</button>
+        </div>
+
+        <div class="tool-group">
+            <button id="tool-line" onclick="setTool('line')">➖ Линия</button>
+            <button id="tool-rect" onclick="setTool('rect')">⬜ Квадрат</button>
+            <button id="tool-circle" onclick="setTool('circle')">⭕ Круг</button>
+            <button id="tool-triangle" onclick="setTool('triangle')">🔺 Треугольник</button>
+            <button id="tool-cube" onclick="setTool('cube')">📦 Куб 3D</button>
+        </div>
+
+        <div class="tool-group">
+            <label for="colorPicker">Цвет:</label>
+            <input type="color" id="colorPicker" value="#212529" onchange="updateSettings()">
+            
+            <label for="lineWidth">Размер:</label>
+            <input type="range" id="lineWidth" min="1" max="20" value="3" oninput="updateSettings()">
+            <span id="widthVal" style="font-size: 12px; font-weight: 600; color: #495057;">3px</span>
+        </div>
+
+        <div class="tool-group">
+            <button id="grid-toggle" onclick="toggleGrid()">🏁 Сетка</button>
+            <button onclick="undo()" style="color: #fd7e14;">↩️ Отмена</button>
+            <button onclick="saveImage()" style="color: #28a745;">💾 Сохранить</button>
+            <button onclick="clearCanvas()" style="color: #dc3545;">🗑️ Очистить</button>
+        </div>
+    </div>
+
+    <div id="canvas-container">
+        <canvas id="paintCanvas"></canvas>
+    </div>
     <script>
         const socket = io(); 
         const canvas = document.getElementById('paintCanvas');
         const ctx = canvas.getContext('2d');
         const widthVal = document.getElementById('widthVal');
-        const opacityVal = document.getElementById('opacityVal');
-        const hardnessVal = document.getElementById('hardnessVal');
         const container = document.getElementById('canvas-container');
 
         let isDrawing = false;
-        let currentTool = 'brush';
+        let currentTool = 'pencil';
         let startX, startY;
         let snapshot;
-        
-        // Профессиональные параметры мазка (из GIMP)
-        let currentBrushType = 'classic';
-        let currentColor = '#007bff';
-        let currentWidth = 5;
-        let currentOpacity = 1;
-        let currentHardness = 1;
-        let currentBlendMode = 'source-over';
+        let currentColor = '#212529';
+        let currentWidth = 3;
         
         let historyStack = [];
         const MAX_HISTORY = 20;
 
         let myRoom = null;
-        let myName = 'Художник';
+        let myName = 'Гость';
         let myColor = '#' + Math.floor(Math.random()*16777215).toString(16);
 
-        // Проверка ссылки-приглашения
         const urlParams = new URLSearchParams(window.location.search);
         const roomFromUrl = urlParams.get('room');
 
@@ -406,7 +289,7 @@
             myRoom = roomFromUrl;
             document.querySelector('.menu-btn').style.display = 'none';
             const partyBtn = document.querySelector('.menu-btn.secondary');
-            partyBtn.innerText = '🎉 Войти в Арт-Сессию';
+            partyBtn.innerText = '🎉 Войти в Party';
             partyBtn.setAttribute('onclick', 'joinExistingParty()');
         }
 
@@ -414,40 +297,88 @@
             const input = document.getElementById('usernameInput').value.trim();
             if(input) myName = input;
             document.getElementById('menuOverlay').style.display = 'none';
+            document.getElementById('mainToolbar').style.display = 'flex';
             initCanvas();
         }
 
         function startPartyMode() {
             const input = document.getElementById('usernameInput').value.trim();
-            if(!input) { alert('Введите ваш творческий ник!'); return; }
+            if(!input) { alert('Пожалуйста, введите ваш ник перед созданием комнаты!'); return; }
             myName = input;
-            myRoom = 'studio-' + Math.floor(Math.random() * 1000000);
+            myRoom = 'party-' + Math.floor(Math.random() * 1000000);
             window.history.pushState({}, '', `?room=${myRoom}`);
             enterRoom();
         }
 
         function joinExistingParty() {
             const input = document.getElementById('usernameInput').value.trim();
-            if(!input) { alert('Введите ваш творческий ник!'); return; }
+            if(!input) { alert('Пожалуйста, введите ваш ник для входа!'); return; }
             myName = input;
             enterRoom();
         }
 
         function enterRoom() {
             document.getElementById('menuOverlay').style.display = 'none';
+            document.getElementById('mainToolbar').style.display = 'flex';
             initCanvas();
             socket.emit('join-room', { room: myRoom, name: myName, color: myColor });
-            alert(`Сессия создана! Отправьте ссылку коллегам, чтобы рисовать вместе:\n\n${window.location.href}`);
+            alert(`Party создана! Скопируйте ссылку из адресной строки браузера и отправьте друзьям: \n\n${window.location.href}`);
         }
 
-        // Фиксированный размер профессионального холста (как в GIMP/Aseprite)
+        const activeCursors = {};
+
+        socket.on('update-users', (users) => {
+            Object.keys(activeCursors).forEach(id => {
+                if (!users[id]) {
+                    activeCursors[id].remove();
+                    delete activeCursors[id];
+                }
+            });
+
+            Object.keys(users).forEach(id => {
+                if (id === socket.id) return;
+                if (!activeCursors[id]) {
+                    const cursorDiv = document.createElement('div');
+                    cursorDiv.className = 'user-cursor';
+                    cursorDiv.innerHTML = `
+                        <div class="cursor-pencil">✏️</div>
+                        <div class="cursor-label">${users[id].name}</div>
+                    `;
+                    container.appendChild(cursorDiv);
+                    activeCursors[id] = cursorDiv;
+                }
+                activeCursors[id].querySelector('.cursor-label').style.backgroundColor = users[id].color;
+                activeCursors[id].style.setProperty('--user-color', users[id].color);
+            });
+        });
+
+        socket.on('mouse-move', (data) => {
+            if (activeCursors[data.id]) {
+                activeCursors[data.id].style.display = 'flex';
+                activeCursors[data.id].style.left = data.x + 'px';
+                activeCursors[data.id].style.top = data.y + 'px';
+            }
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            if (myRoom) {
+                socket.emit('mouse-move', { x: e.clientX, y: e.clientY });
+            }
+        });
+
+        window.addEventListener('touchmove', (e) => {
+            if (myRoom && e.touches.length > 0) {
+                socket.emit('mouse-move', { x: e.touches[0].clientX, y: e.touches[0].clientY });
+            }
+        });
         function initCanvas() {
-            canvas.width = 2000;
-            canvas.height = 2000;
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
             ctx.fillStyle = 'white';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             saveHistoryState();
-            updateSettings();
         }
 
         function saveHistoryState() {
@@ -458,194 +389,119 @@
         function undo() {
             if (historyStack.length > 1) {
                 historyStack.pop();
-                ctx.putImageData(historyStack[historyStack.length - 1], 0, 0);
+                const prevState = historyStack[historyStack.length - 1];
+                ctx.putImageData(prevState, 0, 0);
             }
         }
 
         function toggleGrid() {
             canvas.classList.toggle('grid-bg');
+            document.getElementById('grid-toggle').classList.toggle('active');
         }
 
-        // Синхронизация GIMP-параметров
         function updateSettings() {
             currentColor = document.getElementById('colorPicker').value;
             currentWidth = document.getElementById('lineWidth').value;
-            currentOpacity = document.getElementById('lineOpacity').value / 100;
-            currentHardness = document.getElementById('brushHardness').value / 100;
-            currentBlendMode = document.getElementById('blendMode').value;
-            currentBrushType = document.getElementById('brushType').value;
-
             widthVal.innerText = currentWidth + 'px';
-            opacityVal.innerText = document.getElementById('lineOpacity').value + '%';
-            hardnessVal.innerText = document.getElementById('brushHardness').value + '%';
         }
 
         function setTool(tool) {
             currentTool = tool;
-            document.querySelectorAll('.tool-panel button').forEach(btn => btn.classList.remove('active'));
+            document.querySelectorAll('.tool-group button').forEach(btn => {
+                if(btn.id.startsWith('tool-')) btn.classList.remove('active');
+            });
             const activeBtn = document.getElementById(`tool-${tool}`);
             if(activeBtn) activeBtn.classList.add('active');
         }
 
-        // МАТЕМАТИКА ПРОФЕССИОНАЛЬНЫХ КИСТЕЙ (Генерация мазков)
-        function drawBrushStroke(context, x, y, brushType, color, size, opacity, hardness, blend) {
-            context.save();
-            context.globalCompositeOperation = blend;
-            
-            // Преобразуем HEX в RGBA для управления прозрачностью из GIMP панели
-            let r = parseInt(color.slice(1,3), 16);
-            let g = parseInt(color.slice(3,5), 16);
-            let b = parseInt(color.slice(5,7), 16);
+        function draw3DCube(ctx, x1, y1, x2, y2) {
+            const w = x2 - x1;
+            const h = y2 - y1;
+            const depth = Math.min(Math.abs(w), Math.abs(h)) * 0.35 * (w < 0 ? -1 : 1);
+            const depthY = Math.min(Math.abs(w), Math.abs(h)) * 0.35 * (h < 0 ? -1 : 1);
 
-            if (brushType === 'classic') {
-                // Классическая кисть с динамической жесткостью краев
-                let gradient = context.createRadialGradient(x, y, size * hardness * 0.5, x, y, size * 0.5);
-                gradient.addColorStop(0, `rgba(${r},${g},${b},${opacity})`);
-                gradient.addColorStop(1, `rgba(${r},${g},${b},0)`);
-                context.fillStyle = gradient;
-                context.beginPath();
-                context.arc(x, y, size * 0.5, 0, Math.PI * 2);
-                context.fill();
-            } 
-            else if (brushType === 'airbrush') {
-                // Аэрограф (Мягкое распыление частиц)
-                context.fillStyle = `rgba(${r},${g},${b},${opacity * 0.15})`;
-                for (let i = 0; i < size * 2; i++) {
-                    let angle = Math.random() * Math.PI * 2;
-                    let radius = Math.random() * (size * 0.5);
-                    let pX = x + Math.cos(angle) * radius;
-                    let pY = y + Math.sin(angle) * radius;
-                    context.fillRect(pX, pY, 1.5, 1.5);
-                }
-            } 
-            else if (brushType === 'charcoal') {
-                // Текстурный уголь (Шероховатый мазок)
-                context.fillStyle = `rgba(${r},${g},${b},${opacity * 0.4})`;
-                for (let i = 0; i < size * 0.5; i++) {
-                    let offsetW = (Math.random() - 0.5) * size;
-                    let offsetH = (Math.random() - 0.5) * size;
-                    if (Math.getSelection) {
-                        context.fillRect(x + offsetW, y + offsetH, 2, 2);
-                    }
-                }
-            } 
-            else if (brushType === 'oil') {
-                // Масляная кисть (Имитация волокон щетины)
-                context.strokeStyle = `rgba(${r},${g},${b},${opacity * 0.3})`;
-                context.lineWidth = 1.5;
-                for (let i = -size*0.5; i < size*0.5; i += 3) {
-                    context.beginPath();
-                    context.moveTo(x + i, y - size*0.2);
-                    context.lineTo(x + i + (Math.random()*4), y + size*0.2);
-                    context.stroke();
-                }
-            } 
-            else if (brushType === 'pixel') {
-                // Pixel-Art Маркер (Резкие попиксельные блоки из Aseprite)
-                context.fillStyle = `rgba(${r},${g},${b},1)`; // Пиксель-арт всегда на 100% плотный
-                let pSize = Math.max(1, Math.floor(size / 4)); // Масштабируем шаг пикселя
-                let pixelX = Math.floor(x / pSize) * pSize;
-                let pixelY = Math.floor(y / pSize) * pSize;
-                context.fillRect(pixelX, pixelY, pSize, pSize);
-            }
-            context.restore();
-        }
-        function getCanvasCoordinates(e) {
-            const rect = canvas.getBoundingClientRect();
-            const clientX = e.clientX || (e.touches && e.touches ? e.touches.clientX : 0);
-            const clientY = e.clientY || (e.touches && e.touches ? e.touches.clientY : 0);
-            return {
-                x: (clientX - rect.left) * (canvas.width / rect.width),
-                y: (clientY - rect.top) * (canvas.height / rect.height)
-            };
-        }
+            ctx.strokeRect(x1 + depth, y1 - depthY, w, h);
+            ctx.strokeRect(x1, y1, w, h);
 
+            ctx.beginPath();
+            ctx.moveTo(x1, y1); ctx.lineTo(x1 + depth, y1 - depthY);
+            ctx.moveTo(x1 + w, y1); ctx.lineTo(x1 + w + depth, y1 - depthY);
+            ctx.moveTo(x1, y1 + h); ctx.lineTo(x1 + depth, y1 + h - depthY);
+            ctx.moveTo(x1 + w, y1 + h); ctx.lineTo(x1 + w + depth, y1 + h - depthY);
+            ctx.stroke();
+        }
         function startDraw(e) {
             if (currentTool === 'text') {
                 createTextPrompt(e);
                 return;
             }
             isDrawing = true;
-            const coords = getCanvasCoordinates(e);
-            startX = coords.x;
-            startY = coords.y;
+            const clientX = e.clientX || (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+            const clientY = e.clientY || (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+            startX = clientX;
+            startY = clientY;
 
-            if (currentTool === 'brush') {
-                drawBrushStroke(ctx, startX, startY, currentBrushType, currentColor, currentWidth, currentOpacity, currentHardness, currentBlendMode);
-                if (myRoom) {
-                    socket.emit('draw', {
-                        type: 'brush', brushType: currentBrushType, x: startX, y: startY,
-                        color: currentColor, size: currentWidth, opacity: currentOpacity,
-                        hardness: currentHardness, blend: currentBlendMode
-                    });
-                }
+            ctx.beginPath();
+            if (currentTool === 'pencil') {
+                ctx.moveTo(startX, startY);
+                ctx.strokeStyle = currentColor;
+                ctx.lineWidth = currentWidth;
             } else if (currentTool === 'eraser') {
-                ctx.save();
-                ctx.globalCompositeOperation = 'destination-out';
-                ctx.beginPath();
-                ctx.arc(startX, startY, currentWidth * 1.5, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.restore();
-                if (myRoom) {
-                    socket.emit('draw', { type: 'eraser', x: startX, y: startY, size: currentWidth * 1.5 });
-                }
+                ctx.moveTo(startX, startY);
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = currentWidth * 3;
             }
             snapshot = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+            if (myRoom) {
+                socket.emit('draw', { 
+                    x: startX, 
+                    y: startY, 
+                    color: currentTool === 'eraser' ? '#ffffff' : currentColor, 
+                    width: currentTool === 'eraser' ? currentWidth * 3 : currentWidth, 
+                    isNewPath: true 
+                });
+            }
         }
 
         function drawing(e) {
-            const coords = getCanvasCoordinates(e);
-            if (myRoom) {
-                socket.emit('mouse-move', { x: coords.x + canvas.getBoundingClientRect().left, y: coords.y + canvas.getBoundingClientRect().top });
-            }
             if (!isDrawing) return;
             e.preventDefault();
 
-            if (currentTool === 'brush') {
-                let steps = Math.max(1, Math.floor(Math.hypot(coords.x - startX, coords.y - startY) / (currentWidth * 0.1)));
-                for (let i = 0; i <= steps; i++) {
-                    let t = i / steps;
-                    let currX = startX + (coords.x - startX) * t;
-                    let currY = startY + (coords.y - startY) * t;
-                    drawBrushStroke(ctx, currX, currY, currentBrushType, currentColor, currentWidth, currentOpacity, currentHardness, currentBlendMode);
-                    if (myRoom) {
-                        socket.emit('draw', {
-                            type: 'brush', brushType: currentBrushType, x: currX, y: currY,
-                            color: currentColor, size: currentWidth, opacity: currentOpacity,
-                            hardness: currentHardness, blend: currentBlendMode
-                        });
-                    }
-                }
-                startX = coords.x;
-                startY = coords.y;
-            } else if (currentTool === 'eraser') {
-                ctx.save();
-                ctx.globalCompositeOperation = 'destination-out';
-                ctx.beginPath();
-                ctx.arc(coords.x, coords.y, currentWidth * 1.5, 0, Math.PI * 2);
-                ctx.fill();
-                ctx.restore();
+            const clientX = e.clientX || (e.touches && e.touches[0] ? e.touches[0].clientX : 0);
+            const clientY = e.clientY || (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+
+            if (currentTool === 'pencil' || currentTool === 'eraser') {
+                ctx.lineTo(clientX, clientY);
+                ctx.stroke();
+
                 if (myRoom) {
-                    socket.emit('draw', { type: 'eraser', x: coords.x, y: coords.y, size: currentWidth * 1.5 });
+                    socket.emit('draw', {
+                        x: clientX,
+                        y: clientY,
+                        color: currentTool === 'eraser' ? '#ffffff' : currentColor,
+                        width: currentTool === 'eraser' ? currentWidth * 3 : currentWidth,
+                        isNewPath: false
+                    });
                 }
             } else {
                 ctx.putImageData(snapshot, 0, 0);
                 ctx.strokeStyle = currentColor;
                 ctx.lineWidth = currentWidth;
-                ctx.globalCompositeOperation = currentBlendMode;
                 ctx.beginPath();
+
                 if (currentTool === 'line') {
-                    ctx.moveTo(startX, startY); ctx.lineTo(coords.x, coords.y); ctx.stroke();
+                    ctx.moveTo(startX, startY); ctx.lineTo(clientX, clientY); ctx.stroke();
                 } else if (currentTool === 'rect') {
-                    ctx.strokeRect(startX, startY, coords.x - startX, coords.y - startY);
+                    ctx.strokeRect(startX, startY, clientX - startX, clientY - startY);
                 } else if (currentTool === 'circle') {
-                    let radius = Math.hypot(startX - coords.x, startY - coords.y);
+                    let radius = Math.sqrt(Math.pow((startX - clientX), 2) + Math.pow((startY - clientY), 2));
                     ctx.arc(startX, startY, radius, 0, 2 * Math.PI); ctx.stroke();
                 } else if (currentTool === 'triangle') {
-                    ctx.moveTo(startX + (coords.x - startX) / 2, startY);
-                    ctx.lineTo(coords.x, coords.y); ctx.lineTo(startX, coords.y); ctx.closePath(); ctx.stroke();
+                    ctx.moveTo(startX + (clientX - startX) / 2, startY);
+                    ctx.lineTo(clientX, clientY); ctx.lineTo(startX, clientY); ctx.closePath(); ctx.stroke();
                 } else if (currentTool === 'cube') {
-                    draw3DCube(ctx, startX, startY, coords.x, coords.y);
+                    draw3DCube(ctx, startX, startY, clientX, clientY);
                 }
             }
         }
@@ -659,78 +515,26 @@
         }
 
         socket.on('draw', (data) => {
-            if (data.type === 'brush') {
-                drawBrushStroke(ctx, data.x, data.y, data.brushType, data.color, data.size, data.opacity, data.hardness, data.blend);
-            } else if (data.type === 'eraser') {
-                ctx.save();
-                ctx.globalCompositeOperation = 'destination-out';
-                ctx.beginPath(); ctx.arc(data.x, data.y, data.size, 0, Math.PI * 2); ctx.fill();
-                ctx.restore();
-            } else if (data.type === 'clear') {
-                ctx.fillStyle = 'white'; ctx.fillRect(0, 0, canvas.width, canvas.height);
-                historyStack = []; saveHistoryState();
+            ctx.lineWidth = data.width;
+            ctx.strokeStyle = data.color;
+            if (data.isNewPath) {
+                ctx.beginPath();
+                ctx.moveTo(data.x, data.y);
+            } else {
+                ctx.lineTo(data.x, data.y);
+                ctx.stroke();
             }
         });
 
-        socket.on('update-users', (users) => {
-            const listBox = document.getElementById('usersList');
-            listBox.innerHTML = '';
-            Object.keys(users).forEach(id => {
-                const isMe = (id === socket.id);
-                const userDiv = document.createElement('div');
-                userDiv.className = 'user-item';
-                userDiv.innerHTML = `
-                    <div class="user-color-dot" style="background: ${users[id].color}"></div>
-                    <span>${users[id].name} ${isMe ? '(Вы)' : ''}</span>
-                `;
-                listBox.appendChild(userDiv);
-            });
-        });
-
-        function createTextPrompt(e) {
-            const existingInput = document.querySelector('.text-input-field');
-            if (existingInput) return;
-            const clickCoords = getCanvasCoordinates(e);
-            const input = document.createElement('textarea');
-            input.className = 'text-input-field';
-            input.style.left = `${e.clientX}px`;
-            input.style.top = `${e.clientY}px`;
-            input.style.font = `${parseInt(currentWidth) * 2 + 14}px 'Segoe UI'`;
-            input.style.color = currentColor;
-            container.appendChild(input);
-            setTimeout(() => input.focus(), 50);
-
-            input.addEventListener('blur', () => {
-                const text = input.value.trim();
-                if (text) {
-                    ctx.save();
-                    ctx.fillStyle = currentColor;
-                    ctx.font = input.style.font;
-                    ctx.textBaseline = 'top';
-                    ctx.globalCompositeOperation = currentBlendMode;
-                    const lines = text.split('\n');
-                    let currentY = clickCoords.y;
-                    const lineHeight = (parseInt(currentWidth) * 2 + 14) * 1.2;
-                    lines.forEach(line => {
-                        ctx.fillText(line, clickCoords.x, currentY);
-                        currentY += lineHeight;
-                    });
-                    ctx.restore();
-                    saveHistoryState();
-                }
-                input.remove();
-            });
-        }
-
         function saveImage() {
             const link = document.createElement('a');
-            link.download = `idock_studio_art_${Date.now()}.png`;
+            link.download = `idock_board_${Date.now()}.png`;
             link.href = canvas.toDataURL('image/png');
             link.click();
         }
 
         function clearCanvas() {
-            if(confirm('Очистить весь холст сессии?')) {
+            if(confirm('Очистить всю доску для всех?')) {
                 ctx.fillStyle = 'white';
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
                 historyStack = [];
@@ -738,10 +542,73 @@
                 if (myRoom) socket.emit('clear');
             }
         }
-
+        
         socket.on('clear', () => {
             ctx.fillStyle = 'white'; ctx.fillRect(0, 0, canvas.width, canvas.height);
             historyStack = []; saveHistoryState();
+        });
+
+        function createTextPrompt(e) {
+            const existingInput = document.querySelector('.text-input-field');
+            if (existingInput) return;
+
+            const input = document.createElement('textarea');
+            input.className = 'text-input-field';
+            input.style.left = `${e.clientX}px`;
+            input.style.top = `${e.clientY}px`;
+            input.style.font = `${parseInt(currentWidth) * 3 + 14}px 'Segoe UI'`;
+            input.style.color = currentColor;
+            
+            container.appendChild(input);
+            setTimeout(() => input.focus(), 50);
+
+            input.addEventListener('blur', () => {
+                const text = input.value.trim();
+                if (text) {
+                    ctx.fillStyle = currentColor;
+                    ctx.font = input.style.font;
+                    ctx.textBaseline = 'top';
+                    const lines = text.split('\n');
+                    let currentY = e.clientY;
+                    const lineHeight = parseInt(input.style.font) * 1.2;
+                    lines.forEach(line => {
+                        ctx.fillText(line, e.clientX, currentY);
+                        currentY += lineHeight;
+                    });
+                    saveHistoryState();
+                }
+                input.remove();
+            });
+
+            input.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter' && event.shiftKey) input.blur();
+            });
+        }
+
+        window.addEventListener('paste', function(e) {
+            const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+            for (let index in items) {
+                const item = items[index];
+                if (item.kind === 'file') {
+                    const blob = item.getAsFile();
+                    const reader = new FileReader();
+                    reader.onload = function(event) {
+                        const img = new Image();
+                        img.onload = function() {
+                            const maxW = canvas.width * 0.6; const maxH = canvas.height * 0.6;
+                            let w = img.width; let h = img.height;
+                            if (w > maxW || h > maxH) {
+                                const ratio = Math.min(maxW / w, maxH / h);
+                                w *= ratio; h *= ratio;
+                            }
+                            ctx.drawImage(img, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h);
+                            saveHistoryState();
+                        };
+                        img.src = event.target.result;
+                    };
+                    reader.readAsDataURL(blob);
+                }
+            }
         });
 
         canvas.addEventListener('mousedown', startDraw);
@@ -751,6 +618,7 @@
         canvas.addEventListener('touchstart', startDraw);
         canvas.addEventListener('touchmove', drawing);
         canvas.addEventListener('touchend', stopDraw);
+        initCanvas();
     </script>
 </body>
 </html>
